@@ -1,0 +1,47 @@
+name: Build Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - bun-linux-x64
+          - bun-linux-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build ${{ matrix.target }}
+        run: |
+          OUTPUT_FILE="pi-prusa-cam-${{ matrix.target }}"
+          bun build src/index.ts --compile --outfile "$OUTPUT_FILE" --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: pi-prusa-cam-${{ matrix.target }}
+          path: pi-prusa-cam-${{ matrix.target }}
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            pi-prusa-cam-bun-linux-x64
+            pi-prusa-cam-bun-linux-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

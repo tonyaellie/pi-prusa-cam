@@ -1,0 +1,18 @@
+{
+  "name": "pi-prusa-cam",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "setup": "npx openapi-typescript https://connect.prusa3d.com/docs/cameras/openapi/openapi.yaml -o src/api.d.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.15.0"
+  }
+}
