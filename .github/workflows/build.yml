@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,12 +39,24 @@ jobs:
           name: pi-prusa-cam-${{ matrix.target }}
           path: pi-prusa-cam-${{ matrix.target }}
 
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp artifacts/pi-prusa-cam-bun-linux-x64/pi-prusa-cam-bun-linux-x64 release/
+          cp artifacts/pi-prusa-cam-bun-linux-arm64/pi-prusa-cam-bun-linux-arm64 release/
+
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            pi-prusa-cam-bun-linux-x64
-            pi-prusa-cam-bun-linux-arm64
+          files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
