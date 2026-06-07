@@ -7,12 +7,14 @@
     "setup": "npx openapi-typescript https://connect.prusa3d.com/docs/cameras/openapi/openapi.yaml -o src/api.d.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "commander": "^15.0.0",
     "openapi-fetch": "^0.15.0"
   }
 }

@@ -45,26 +45,32 @@ sudo mv pi-prusa-cam-arm64 /usr/local/bin/pi-prusa-cam
 ### Basic Usage
 
 ```bash
-pi-prusa-cam <token> [camera-index] [interval-seconds]
+pi-prusa-cam [options] <token=camIdx[:name]>...
 ```
 
-**Arguments:**
+Provide one or more mappings from camera token to camera index. The API supports one camera per token, so map each camera to a different token.
 
-- `token` (required): Your Prusa Connect camera token
-- `camera-index` (optional): Camera index to use (default: 0). Run without args to see list.
-- `interval-seconds` (optional): Upload interval in seconds (default: 30)
+Options:
+
+- `-i, --interval <seconds>`: Upload interval in seconds (default: 30)
+
+Arguments:
+
+- `token=camIdx[:name]` (required): Map a camera token to a detected camera index and optional name. Examples:
+  - `abc123=0` — map token `abc123` to `/dev/video0`.
+  - `abc123=0:Front` — map token `abc123` to `/dev/video0` and set camera name to `Front`.
 
 ### Examples
 
 ```bash
-# List available cameras and use first one, upload every 30 seconds
-pi-prusa-cam YOUR_TOKEN
+# Map two tokens to cameras 0 and 1, upload every 30 seconds
+pi-prusa-cam -i 30 tokenA=0 tokenB=1
 
-# Use camera index 1, upload every 15 seconds
-pi-prusa-cam YOUR_TOKEN 1 15
+# Map a token to camera 0 and set name to "Front"
+pi-prusa-cam -i 30 tokenA=0:Front
 
-# Use camera index 0, upload every 60 seconds
-pi-prusa-cam YOUR_TOKEN 0 60
+# Map a token to camera 1 and set name with spaces (quote it)
+pi-prusa-cam -i 30 'tokenB=1:Back Camera'
 ```
 
 ## Setup to Run Continuously

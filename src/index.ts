@@ -1,18 +1,6 @@
 import createClient from 'openapi-fetch';
 import type { paths } from './api.d.ts';
-
-const token = Bun.argv[2];
-const cameraIndexArg = Bun.argv[3];
-const intervalArg = Bun.argv[4];
-
-if (!token) {
-  console.error(
-    'Usage: bun run index.ts <token> [camera-index] [interval-seconds]',
-  );
-  process.exit(1);
-}
-
-const interval = intervalArg ? Math.max(1, parseInt(intervalArg, 10)) : 30;
+import { Command } from 'commander';
 
 const client = createClient<paths>({
   baseUrl: 'https://connect.prusa3d.com',
@@ -61,14 +49,17 @@ const captureImage = async (devicePath: string): Promise<Buffer | null> => {
   }
 };
 
-const uploadSnapshot = async (imageBuffer: Buffer): Promise<boolean> => {
+const uploadSnapshot = async (
+  imageBuffer: Buffer,
+  token: string,
+): Promise<boolean> => {
   try {
     const response = await fetch('https://connect.prusa3d.com/c/snapshot', {
       method: 'PUT',
       body: imageBuffer,
       headers: {
         'Content-Type': 'image/jpg',
-        Token: token!,
+        Token: token,
         Fingerprint: 'pi-prusa-cam-device',
       },
     });
@@ -86,12 +77,16 @@ const uploadSnapshot = async (imageBuffer: Buffer): Promise<boolean> => {
   }
 };
 
-const updateCameraInfo = async (cameraPath: string): Promise<boolean> => {
+const updateCameraInfo = async (
+  cameraPath: string,
+  token: string,
+  name?: string,
+): Promise<boolean> => {
   try {
     const response = await client.PUT('/c/info', {
       body: {
         config: {
-          name: 'Prusa Pi Camera',
+          name: name ?? 'Prusa Pi Camera',
           path: cameraPath,
           driver: 'V4L2',
           trigger_scheme: 'THIRTY_SEC',
@@ -99,7 +94,7 @@ const updateCameraInfo = async (cameraPath: string): Promise<boolean> => {
         },
       } as any,
       headers: {
-        Token: token!,
+        Token: token,
         Fingerprint: 'pi-prusa-cam-device',
       },
     });
@@ -116,10 +111,13 @@ const updateCameraInfo = async (cameraPath: string): Promise<boolean> => {
   }
 };
 
-const pushSnapshot = async (cameraPath: string): Promise<boolean> => {
+const pushSnapshot = async (
+  cameraPath: string,
+  token: string,
+): Promise<boolean> => {
   const image = await captureImage(cameraPath);
   if (!image) return false;
-  return uploadSnapshot(image);
+  return uploadSnapshot(image, token);
 };
 
 const cameras = await findUSBCameras();
@@ -132,31 +130,72 @@ if (cameras.length === 0) {
 console.log(`[INFO] Found ${cameras.length} camera(s):`);
 cameras.forEach((cam, idx) => console.log(`  [${idx}] ${cam}`));
 
-let cameraPath: string;
+// Parse CLI with commander for token=cameraIndex mappings.
+// Example:
+//  bun run src/index.ts tokenA=0 tokenB=1 --interval 30
+const program = new Command();
+program
+  .name('pi-prusa-cam')
+  .argument('<mappings...>', 'token=camIdx mappings (e.g. abc123=0)')
+  .option('-i, --interval <seconds>', 'upload interval in seconds', '30')
+  .parse(process.argv);
 
-if (cameraIndexArg) {
-  const idx = parseInt(cameraIndexArg, 10);
-  if (isNaN(idx) || idx < 0 || idx >= cameras.length) {
-    console.error(`[ERROR] Invalid camera index: ${cameraIndexArg}`);
-    process.exit(1);
-  }
-  cameraPath = cameras[idx]!;
-} else {
-  cameraPath = cameras[0]!;
+const mappingArgs: string[] = program.args as string[];
+const cliInterval = Math.max(1, parseInt(program.opts().interval, 10));
+
+type CameraToken = { cameraPath: string; token: string; name?: string };
+const cameraTokens: CameraToken[] = [];
+
+if (mappingArgs.length === 0) {
+  console.error(
+    'Usage: pi-prusa-cam token=idx [token=idx ...] [--interval seconds]',
+  );
+  process.exit(1);
 }
 
-console.log(`[INFO] Using camera: ${cameraPath}`);
-console.log(`[INFO] Upload interval: ${interval}s`);
+for (const ma of mappingArgs) {
+  // Accept forms: token=idx  or token=idx:Name
+  const [t, right] = ma.split('=');
+  if (!t || right == null) {
+    console.error(`[ERROR] Invalid mapping: ${ma}. Expected token=idx[:name]`);
+    process.exit(1);
+  }
+  const parts = right.split(':');
+  const idxStr = parts[0];
+  const name = parts.slice(1).join(':') || undefined;
+  const idx = parseInt(idxStr, 10);
+  if (isNaN(idx) || idx < 0 || idx >= cameras.length) {
+    console.error(`[ERROR] Invalid camera index in mapping: ${ma}`);
+    process.exit(1);
+  }
+  if (t.length > 20) {
+    console.error(
+      `[ERROR] Token too long for mapping: ${ma}. Tokens must be 20 characters or fewer.`,
+    );
+    process.exit(1);
+  }
+  cameraTokens.push({ cameraPath: cameras[idx]!, token: t, name });
+}
 
-await updateCameraInfo(cameraPath);
-console.log('[INFO] Camera initialized');
+console.log('[INFO] Starting camera streams:');
+cameraTokens.forEach((ct) =>
+  console.log(`  ${ct.cameraPath} -> [token:${ct.token.slice(0, 6)}...]`),
+);
+console.log(`[INFO] Upload interval: ${cliInterval}s`);
 
-// Push initial snapshot
-await pushSnapshot(cameraPath);
+// Initialize and start snapshot loops for each selected camera-token mapping
+for (const { cameraPath: camPath, token: camToken, name } of cameraTokens) {
+  // per-mapping name is used if provided
+  await updateCameraInfo(camPath, camToken, name);
+  console.log(`[INFO] Camera initialized: ${camPath}`);
 
-// Push snapshots at regular interval
-setInterval(async () => {
-  const success = await pushSnapshot(cameraPath);
-  const status = success ? '[OK]' : '[FAIL]';
-  console.log(`${status} ${new Date().toISOString()}`);
-}, interval * 1000);
+  // Push initial snapshot
+  await pushSnapshot(camPath, camToken);
+
+  // Push snapshots at regular interval for this camera
+  setInterval(async () => {
+    const success = await pushSnapshot(camPath, camToken);
+    const status = success ? '[OK]' : '[FAIL]';
+    console.log(`${status} ${camPath} ${new Date().toISOString()}`);
+  }, cliInterval * 1000);
+}
